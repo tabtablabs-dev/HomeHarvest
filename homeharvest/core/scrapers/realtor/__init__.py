@@ -24,17 +24,9 @@ from tenacity import (
 
 from .. import Scraper
 from ....exceptions import AuthenticationError
-from ..models import (
-    Property,
-    ListingType,
-    ReturnType
-)
+from ..models import Property, ListingType, ReturnType
 from .queries import GENERAL_RESULTS_QUERY, HOMES_DATA, SEARCH_SUGGESTIONS_QUERY
-from .processors import (
-    process_property,
-    process_extra_property_details,
-    get_key
-)
+from .processors import process_property, process_extra_property_details, get_key
 
 
 class RealtorScraper(Scraper):
@@ -49,7 +41,7 @@ class RealtorScraper(Scraper):
     def _minify_query(query: str) -> str:
         """Minify GraphQL query by collapsing whitespace to single spaces."""
         # Split on whitespace, filter empty strings, join with single space
-        return ' '.join(query.split())
+        return " ".join(query.split())
 
     def _graphql_post(self, query: str, variables: dict, operation_name: str) -> dict:
         """
@@ -69,13 +61,14 @@ class RealtorScraper(Scraper):
             "variables": variables,
         }
 
-        response = self.session.post(self.SEARCH_GQL_URL, data=json.dumps(payload, separators=(',', ':')))
+        response = self.session.post(
+            self.SEARCH_GQL_URL, data=json.dumps(payload, separators=(",", ":"))
+        )
 
         if response.status_code == 403:
             if not self.proxy:
                 raise AuthenticationError(
-                    "Received 403 Forbidden from Realtor.com API.",
-                    response=response
+                    "Received 403 Forbidden from Realtor.com API.", response=response
                 )
             else:
                 raise Exception("Received 403 Forbidden, retrying...")
@@ -88,13 +81,11 @@ class RealtorScraper(Scraper):
         stop=stop_after_attempt(3),
     )
     def handle_location(self):
-        variables = {
-            "searchInput": {
-                "search_term": self.location
-            }
-        }
+        variables = {"searchInput": {"search_term": self.location}}
 
-        response_json = self._graphql_post(SEARCH_SUGGESTIONS_QUERY, variables, "Search_suggestions")
+        response_json = self._graphql_post(
+            SEARCH_SUGGESTIONS_QUERY, variables, "Search_suggestions"
+        )
 
         if (
             response_json is None
@@ -107,7 +98,9 @@ class RealtorScraper(Scraper):
         ):
             # If we got a 400 error with "Required parameter is missing", raise to trigger retry
             if response_json and "errors" in response_json:
-                error_msgs = [e.get("message", "") for e in response_json.get("errors", [])]
+                error_msgs = [
+                    e.get("message", "") for e in response_json.get("errors", [])
+                ]
                 if any("Required parameter is missing" in msg for msg in error_msgs):
                     raise Exception(f"Transient API error: {error_msgs}")
             return None
@@ -195,16 +188,26 @@ class RealtorScraper(Scraper):
 
             # Process based on return type
             if self.return_type != ReturnType.raw:
-                return [process_property(property_info, self.mls_only, self.extra_property_data,
-                                       self.exclude_pending, self.listing_type, get_key,
-                                       process_extra_property_details)]
+                return [
+                    process_property(
+                        property_info,
+                        self.mls_only,
+                        self.extra_property_data,
+                        self.exclude_pending,
+                        self.listing_type,
+                        get_key,
+                        process_extra_property_details,
+                    )
+                ]
             else:
                 return [property_info]
 
         except Exception:
             return []
 
-    def general_search(self, variables: dict, search_type: str) -> Dict[str, Union[int, Union[list[Property], list[dict]]]]:
+    def general_search(
+        self, variables: dict, search_type: str
+    ) -> Dict[str, Union[int, Union[list[Property], list[dict]]]]:
         """
         Handles a location area & returns a list of properties
         """
@@ -243,7 +246,9 @@ class RealtorScraper(Scraper):
         # Build date parameter (expand to full days if hour-based filtering is used)
         if date_field:
             # Check if we have hour precision (need to extract date part for API, then filter client-side)
-            has_hour_precision = (self.date_from_precision == "hour" or self.date_to_precision == "hour")
+            has_hour_precision = (
+                self.date_from_precision == "hour" or self.date_to_precision == "hour"
+            )
 
             if has_hour_precision and (self.date_from or self.date_to):
                 # Hour-based datetime filtering: extract date parts for API, client-side filter by hours
@@ -254,20 +259,26 @@ class RealtorScraper(Scraper):
 
                 if self.date_from:
                     try:
-                        dt_from = datetime.fromisoformat(self.date_from.replace('Z', '+00:00'))
+                        dt_from = datetime.fromisoformat(
+                            self.date_from.replace("Z", "+00:00")
+                        )
                         min_date = dt_from.strftime("%Y-%m-%d")
                     except (ValueError, AttributeError):
                         pass
 
                 if self.date_to:
                     try:
-                        dt_to = datetime.fromisoformat(self.date_to.replace('Z', '+00:00'))
+                        dt_to = datetime.fromisoformat(
+                            self.date_to.replace("Z", "+00:00")
+                        )
                         max_date = dt_to.strftime("%Y-%m-%d")
                     except (ValueError, AttributeError):
                         pass
 
                 if min_date and max_date:
-                    date_param = f'{date_field}: {{ min: "{min_date}", max: "{max_date}" }}'
+                    date_param = (
+                        f'{date_field}: {{ min: "{min_date}", max: "{max_date}" }}'
+                    )
                 elif min_date:
                     date_param = f'{date_field}: {{ min: "{min_date}" }}'
                 elif max_date:
@@ -275,7 +286,9 @@ class RealtorScraper(Scraper):
 
             elif self.past_hours:
                 # Query API for past N days (minimum 1 day), client-side filter by hours
-                days = max(1, int(self.past_hours / 24) + 1)  # Round up to cover the full period
+                days = max(
+                    1, int(self.past_hours / 24) + 1
+                )  # Round up to cover the full period
                 date_param = f'{date_field}: {{ min: "$today-{days}D" }}'
 
             elif self.date_from and self.date_to:
@@ -349,8 +362,13 @@ class RealtorScraper(Scraper):
 
         # Build sort parameter
         if self.sort_by:
-            sort_param = f"sort: [{{ field: {self.sort_by}, direction: {self.sort_direction} }}]"
-        elif isinstance(self.listing_type, ListingType) and self.listing_type == ListingType.SOLD:
+            sort_param = (
+                f"sort: [{{ field: {self.sort_by}, direction: {self.sort_direction} }}]"
+            )
+        elif (
+            isinstance(self.listing_type, ListingType)
+            and self.listing_type == ListingType.SOLD
+        ):
             sort_param = "sort: [{ field: sold_date, direction: desc }]"
         else:
             sort_param = ""  #: prioritize normal fractal sort from realtor
@@ -359,7 +377,11 @@ class RealtorScraper(Scraper):
         # Only use or_filters when PENDING is the only type or mixed only with FOR_SALE
         # Using or_filters with other types (SOLD, FOR_RENT, etc.) will exclude those types
         has_pending = ListingType.PENDING in listing_types
-        other_types = [lt for lt in listing_types if lt not in [ListingType.PENDING, ListingType.FOR_SALE]]
+        other_types = [
+            lt
+            for lt in listing_types
+            if lt not in [ListingType.PENDING, ListingType.FOR_SALE]
+        ]
         use_or_filters = has_pending and len(other_types) == 0
         pending_or_contingent_param = (
             "or_filters: { contingent: true, pending: true }" if use_or_filters else ""
@@ -507,7 +529,9 @@ class RealtorScraper(Scraper):
             extra_property_details = self.get_bulk_prop_details(property_ids) or {}
 
             for result in properties_list:
-                specific_details_for_property = extra_property_details.get(result["property_id"], {})
+                specific_details_for_property = extra_property_details.get(
+                    result["property_id"], {}
+                )
 
                 #: address is retrieved on both homes and search homes, so when merged, homes overrides,
                 # this gets the internal data we want and only updates that (migrate to a func if more fields)
@@ -521,8 +545,19 @@ class RealtorScraper(Scraper):
             with ThreadPoolExecutor(max_workers=self.NUM_PROPERTY_WORKERS) as executor:
                 # Store futures with their indices to maintain sort order
                 futures_with_indices = [
-                    (i, executor.submit(process_property, result, self.mls_only, self.extra_property_data,
-                                       self.exclude_pending, self.listing_type, get_key, process_extra_property_details))
+                    (
+                        i,
+                        executor.submit(
+                            process_property,
+                            result,
+                            self.mls_only,
+                            self.extra_property_data,
+                            self.exclude_pending,
+                            self.listing_type,
+                            get_key,
+                            process_extra_property_details,
+                        ),
+                    )
                     for i, result in enumerate(properties_list)
                 ]
 
@@ -558,7 +593,9 @@ class RealtorScraper(Scraper):
         search_type = (
             "comps"
             if self.radius and location_type == "address"
-            else "address" if location_type == "address" and not self.radius else "area"
+            else "address"
+            if location_type == "address" and not self.radius
+            else "area"
         )
         if location_type == "address":
             if not self.radius:  #: single address search, non comps
@@ -570,7 +607,10 @@ class RealtorScraper(Scraper):
                     return []
 
                 centroid = location_info["centroid"]
-                coordinates = [centroid["lon"], centroid["lat"]]  # GeoJSON order: [lon, lat]
+                coordinates = [
+                    centroid["lon"],
+                    centroid["lat"],
+                ]  # GeoJSON order: [lon, lat]
                 search_variables |= {
                     "coordinates": coordinates,
                     "radius": "{}mi".format(self.radius),
@@ -594,11 +634,14 @@ class RealtorScraper(Scraper):
                 # Parallel mode: Fetch all remaining pages in parallel
                 with ThreadPoolExecutor() as executor:
                     futures_with_offsets = [
-                        (i, executor.submit(
-                            self.general_search,
-                            variables=search_variables | {"offset": i},
-                            search_type=search_type,
-                        ))
+                        (
+                            i,
+                            executor.submit(
+                                self.general_search,
+                                variables=search_variables | {"offset": i},
+                                search_type=search_type,
+                            ),
+                        )
                         for i in range(
                             self.offset + self.DEFAULT_PAGE_SIZE,
                             min(total, self.offset + self.limit),
@@ -634,12 +677,16 @@ class RealtorScraper(Scraper):
 
         # Apply client-side hour-based filtering if needed
         # (API only supports day-level filtering, so we post-filter for hour precision)
-        has_hour_precision = (self.date_from_precision == "hour" or self.date_to_precision == "hour")
+        has_hour_precision = (
+            self.date_from_precision == "hour" or self.date_to_precision == "hour"
+        )
         if self.past_hours or has_hour_precision:
             homes = self._apply_hour_based_date_filter(homes)
         # Apply client-side date filtering for PENDING properties
         # (server-side filters are broken in the API)
-        elif self.listing_type == ListingType.PENDING and (self.last_x_days or self.date_from):
+        elif self.listing_type == ListingType.PENDING and (
+            self.last_x_days or self.date_from
+        ):
             homes = self._apply_pending_date_filter(homes)
 
         # Apply client-side filtering by last_update_date if specified
@@ -674,26 +721,42 @@ class RealtorScraper(Scraper):
 
         if self.past_hours:
             cutoff_datetime = datetime.now() - timedelta(hours=self.past_hours)
-            date_range = {'type': 'since', 'date': cutoff_datetime}
+            date_range = {"type": "since", "date": cutoff_datetime}
         elif self.date_from or self.date_to:
             try:
                 from_datetime = None
                 to_datetime = None
 
                 if self.date_from:
-                    from_datetime_str = self.date_from.replace('Z', '+00:00') if self.date_from.endswith('Z') else self.date_from
-                    from_datetime = datetime.fromisoformat(from_datetime_str).replace(tzinfo=None)
+                    from_datetime_str = (
+                        self.date_from.replace("Z", "+00:00")
+                        if self.date_from.endswith("Z")
+                        else self.date_from
+                    )
+                    from_datetime = datetime.fromisoformat(from_datetime_str).replace(
+                        tzinfo=None
+                    )
 
                 if self.date_to:
-                    to_datetime_str = self.date_to.replace('Z', '+00:00') if self.date_to.endswith('Z') else self.date_to
-                    to_datetime = datetime.fromisoformat(to_datetime_str).replace(tzinfo=None)
+                    to_datetime_str = (
+                        self.date_to.replace("Z", "+00:00")
+                        if self.date_to.endswith("Z")
+                        else self.date_to
+                    )
+                    to_datetime = datetime.fromisoformat(to_datetime_str).replace(
+                        tzinfo=None
+                    )
 
                 if from_datetime and to_datetime:
-                    date_range = {'type': 'range', 'from_date': from_datetime, 'to_date': to_datetime}
+                    date_range = {
+                        "type": "range",
+                        "from_date": from_datetime,
+                        "to_date": to_datetime,
+                    }
                 elif from_datetime:
-                    date_range = {'type': 'since', 'date': from_datetime}
+                    date_range = {"type": "since", "date": from_datetime}
                 elif to_datetime:
-                    date_range = {'type': 'until', 'date': to_datetime}
+                    date_range = {"type": "until", "date": to_datetime}
             except (ValueError, AttributeError):
                 return homes  # If parsing fails, return unfiltered
 
@@ -712,7 +775,9 @@ class RealtorScraper(Scraper):
             # Handle properties without dates
             if property_date is None:
                 # For PENDING, include contingent properties without pending_date
-                if self.listing_type == ListingType.PENDING and self._is_contingent(home):
+                if self.listing_type == ListingType.PENDING and self._is_contingent(
+                    home
+                ):
                     filtered_homes.append(home)
                 continue
 
@@ -725,11 +790,11 @@ class RealtorScraper(Scraper):
     def _get_date_field_for_listing_type(self):
         """Get the appropriate date field name for the current listing type."""
         if self.listing_type == ListingType.SOLD:
-            return 'last_sold_date'
+            return "last_sold_date"
         elif self.listing_type == ListingType.PENDING:
-            return 'pending_date'
+            return "pending_date"
         else:  # FOR_SALE or FOR_RENT
-            return 'list_date'
+            return "list_date"
 
     def _extract_date_from_home(self, home, date_field_name):
         """Extract a date field from a home (handles both dict and Property object).
@@ -748,9 +813,9 @@ class RealtorScraper(Scraper):
         # Fallback to last_status_change_date if primary date field is missing
         # This is useful for PENDING/SOLD properties where the specific date might be unavailable
         if isinstance(home, dict):
-            fallback_date = home.get('last_status_change_date')
+            fallback_date = home.get("last_status_change_date")
         else:
-            fallback_date = getattr(home, 'last_status_change_date', None)
+            fallback_date = getattr(home, "last_status_change_date", None)
 
         if fallback_date:
             return self._parse_date_value(fallback_date)
@@ -759,12 +824,12 @@ class RealtorScraper(Scraper):
 
     def _is_datetime_in_range(self, date_obj, date_range):
         """Check if a datetime object falls within the specified date range (with hour precision)."""
-        if date_range['type'] == 'since':
-            return date_obj >= date_range['date']
-        elif date_range['type'] == 'until':
-            return date_obj <= date_range['date']
-        elif date_range['type'] == 'range':
-            return date_range['from_date'] <= date_obj <= date_range['to_date']
+        if date_range["type"] == "since":
+            return date_obj >= date_range["date"]
+        elif date_range["type"] == "until":
+            return date_obj <= date_range["date"]
+        elif date_range["type"] == "range":
+            return date_range["from_date"] <= date_obj <= date_range["to_date"]
         return False
 
     def _apply_pending_date_filter(self, homes):
@@ -772,50 +837,51 @@ class RealtorScraper(Scraper):
         For contingent properties without pending_date, tries fallback date fields."""
         if not homes:
             return homes
-            
+
         from datetime import datetime, timedelta
-        
+
         # Determine date range for filtering
         date_range = self._get_date_range()
         if not date_range:
             return homes
-            
+
         filtered_homes = []
-        
+
         for home in homes:
             # Extract the best available date for this property
             property_date = self._extract_property_date_for_filtering(home)
-            
+
             # Handle properties without dates (include contingent properties)
             if property_date is None:
                 if self._is_contingent(home):
-                    filtered_homes.append(home)  # Include contingent without date filter
+                    filtered_homes.append(
+                        home
+                    )  # Include contingent without date filter
                 continue
-            
+
             # Check if property date falls within the specified range
             if self._is_date_in_range(property_date, date_range):
                 filtered_homes.append(home)
-                
+
         return filtered_homes
-    
+
     def _get_pending_date(self, home):
         """Extract pending_date from a home property (handles both dict and Property object)."""
         if isinstance(home, dict):
-            return home.get('pending_date')
+            return home.get("pending_date")
         else:
             # Assume it's a Property object
-            return getattr(home, 'pending_date', None)
-    
-    
+            return getattr(home, "pending_date", None)
+
     def _is_contingent(self, home):
         """Check if a property is contingent."""
         if isinstance(home, dict):
-            flags = home.get('flags', {})
-            return flags.get('is_contingent', False)
+            flags = home.get("flags", {})
+            return flags.get("is_contingent", False)
         else:
             # Property object - check flags attribute
-            if hasattr(home, 'flags') and home.flags:
-                return getattr(home.flags, 'is_contingent', False)
+            if hasattr(home, "flags") and home.flags:
+                return getattr(home.flags, "is_contingent", False)
             return False
 
     def _apply_last_update_date_filter(self, homes):
@@ -834,13 +900,21 @@ class RealtorScraper(Scraper):
 
         if self.updated_in_past_hours:
             # Use UTC now, strip timezone to match naive property dates
-            cutoff_datetime = (datetime.now(timezone.utc) - timedelta(hours=self.updated_in_past_hours)).replace(tzinfo=None)
-            date_range = {'type': 'since', 'date': cutoff_datetime}
+            cutoff_datetime = (
+                datetime.now(timezone.utc) - timedelta(hours=self.updated_in_past_hours)
+            ).replace(tzinfo=None)
+            date_range = {"type": "since", "date": cutoff_datetime}
         elif self.updated_since:
             try:
-                since_datetime_str = self.updated_since.replace('Z', '+00:00') if self.updated_since.endswith('Z') else self.updated_since
-                since_datetime = datetime.fromisoformat(since_datetime_str).replace(tzinfo=None)
-                date_range = {'type': 'since', 'date': since_datetime}
+                since_datetime_str = (
+                    self.updated_since.replace("Z", "+00:00")
+                    if self.updated_since.endswith("Z")
+                    else self.updated_since
+                )
+                since_datetime = datetime.fromisoformat(since_datetime_str).replace(
+                    tzinfo=None
+                )
+                date_range = {"type": "since", "date": since_datetime}
             except (ValueError, AttributeError):
                 return homes  # If parsing fails, return unfiltered
 
@@ -851,7 +925,7 @@ class RealtorScraper(Scraper):
 
         for home in homes:
             # Extract last_update_date from the property
-            property_date = self._extract_date_from_home(home, 'last_update_date')
+            property_date = self._extract_date_from_home(home, "last_update_date")
 
             # Skip properties without last_update_date
             if property_date is None:
@@ -869,64 +943,74 @@ class RealtorScraper(Scraper):
 
         if self.last_x_days:
             # Use UTC now, strip timezone to match naive property dates
-            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=self.last_x_days)).replace(tzinfo=None)
-            return {'type': 'since', 'date': cutoff_date}
+            cutoff_date = (
+                datetime.now(timezone.utc) - timedelta(days=self.last_x_days)
+            ).replace(tzinfo=None)
+            return {"type": "since", "date": cutoff_date}
         elif self.date_from and self.date_to:
             try:
                 # Parse and strip timezone to match naive property dates
-                from_date_str = self.date_from.replace('Z', '+00:00') if self.date_from.endswith('Z') else self.date_from
-                to_date_str = self.date_to.replace('Z', '+00:00') if self.date_to.endswith('Z') else self.date_to
+                from_date_str = (
+                    self.date_from.replace("Z", "+00:00")
+                    if self.date_from.endswith("Z")
+                    else self.date_from
+                )
+                to_date_str = (
+                    self.date_to.replace("Z", "+00:00")
+                    if self.date_to.endswith("Z")
+                    else self.date_to
+                )
                 from_date = datetime.fromisoformat(from_date_str).replace(tzinfo=None)
                 to_date = datetime.fromisoformat(to_date_str).replace(tzinfo=None)
-                return {'type': 'range', 'from_date': from_date, 'to_date': to_date}
+                return {"type": "range", "from_date": from_date, "to_date": to_date}
             except ValueError:
                 return None
         return None
-    
+
     def _extract_property_date_for_filtering(self, home):
         """Extract pending_date from a property for filtering.
-        
+
         Returns parsed datetime object or None.
         """
         date_value = self._get_pending_date(home)
         if date_value:
             return self._parse_date_value(date_value)
         return None
-    
+
     def _parse_date_value(self, date_value):
         """Parse a date value (string or datetime) into a timezone-naive datetime object."""
         from datetime import datetime
-        
+
         if isinstance(date_value, datetime):
             return date_value.replace(tzinfo=None)
-        
+
         if not isinstance(date_value, str):
             return None
-            
+
         try:
             # Handle timezone indicators
-            if date_value.endswith('Z'):
-                date_value = date_value[:-1] + '+00:00'
-            elif '.' in date_value and date_value.endswith('Z'):
-                date_value = date_value.replace('Z', '+00:00')
-            
+            if date_value.endswith("Z"):
+                date_value = date_value[:-1] + "+00:00"
+            elif "." in date_value and date_value.endswith("Z"):
+                date_value = date_value.replace("Z", "+00:00")
+
             # Try ISO format first
             try:
                 parsed_date = datetime.fromisoformat(date_value)
                 return parsed_date.replace(tzinfo=None)
             except ValueError:
                 # Try simple datetime format: '2025-08-29 00:00:00'
-                return datetime.strptime(date_value, '%Y-%m-%d %H:%M:%S')
-                
+                return datetime.strptime(date_value, "%Y-%m-%d %H:%M:%S")
+
         except (ValueError, AttributeError):
             return None
-    
+
     def _is_date_in_range(self, date_obj, date_range):
         """Check if a datetime object falls within the specified date range."""
-        if date_range['type'] == 'since':
-            return date_obj >= date_range['date']
-        elif date_range['type'] == 'range':
-            return date_range['from_date'] <= date_obj <= date_range['to_date']
+        if date_range["type"] == "since":
+            return date_obj >= date_range["date"]
+        elif date_range["type"] == "range":
+            return date_range["from_date"] <= date_obj <= date_range["to_date"]
         return False
 
     def _should_fetch_more_pages(self, first_page):
@@ -945,12 +1029,14 @@ class RealtorScraper(Scraper):
         from datetime import datetime, timedelta, timezone
 
         # Check for last_update_date filters
-        if (self.updated_since or self.updated_in_past_hours) and self.sort_by == "last_update_date":
+        if (
+            self.updated_since or self.updated_in_past_hours
+        ) and self.sort_by == "last_update_date":
             if not first_page:
                 return False
 
             last_property = first_page[-1]
-            last_date = self._extract_date_from_home(last_property, 'last_update_date')
+            last_date = self._extract_date_from_home(last_property, "last_update_date")
 
             if not last_date:
                 return True
@@ -958,31 +1044,39 @@ class RealtorScraper(Scraper):
             # Build date range for last_update_date filter
             if self.updated_since:
                 try:
-                    cutoff_datetime = datetime.fromisoformat(self.updated_since.replace('Z', '+00:00') if self.updated_since.endswith('Z') else self.updated_since)
+                    cutoff_datetime = datetime.fromisoformat(
+                        self.updated_since.replace("Z", "+00:00")
+                        if self.updated_since.endswith("Z")
+                        else self.updated_since
+                    )
                     # Strip timezone to match naive datetimes from _parse_date_value
                     cutoff_datetime = cutoff_datetime.replace(tzinfo=None)
-                    date_range = {'type': 'since', 'date': cutoff_datetime}
+                    date_range = {"type": "since", "date": cutoff_datetime}
                 except ValueError:
                     return True
             elif self.updated_in_past_hours:
                 # Use UTC now, strip timezone to match naive property dates
-                cutoff_datetime = (datetime.now(timezone.utc) - timedelta(hours=self.updated_in_past_hours)).replace(tzinfo=None)
-                date_range = {'type': 'since', 'date': cutoff_datetime}
+                cutoff_datetime = (
+                    datetime.now(timezone.utc)
+                    - timedelta(hours=self.updated_in_past_hours)
+                ).replace(tzinfo=None)
+                date_range = {"type": "since", "date": cutoff_datetime}
             else:
                 return True
 
             return self._is_datetime_in_range(last_date, date_range)
 
         # Check for PENDING date filters
-        if (self.listing_type == ListingType.PENDING and
-            (self.last_x_days or self.past_hours or self.date_from) and
-            self.sort_by == "pending_date"):
-
+        if (
+            self.listing_type == ListingType.PENDING
+            and (self.last_x_days or self.past_hours or self.date_from)
+            and self.sort_by == "pending_date"
+        ):
             if not first_page:
                 return False
 
             last_property = first_page[-1]
-            last_date = self._extract_date_from_home(last_property, 'pending_date')
+            last_date = self._extract_date_from_home(last_property, "pending_date")
 
             if not last_date:
                 return True
@@ -1026,22 +1120,31 @@ class RealtorScraper(Scraper):
             # Handle None values - push them to the end
             if value is None:
                 # Use a sentinel value that sorts to the end
-                return (1, 0) if self.sort_direction == "desc" else (1, float('inf'))
+                return (1, 0) if self.sort_direction == "desc" else (1, float("inf"))
 
             # For datetime fields, convert string to datetime for proper sorting
-            if self.sort_by in ['list_date', 'sold_date', 'pending_date', 'last_update_date']:
+            if self.sort_by in [
+                "list_date",
+                "sold_date",
+                "pending_date",
+                "last_update_date",
+            ]:
                 if isinstance(value, str):
                     try:
                         # Handle timezone indicators
                         date_value = value
-                        if date_value.endswith('Z'):
-                            date_value = date_value[:-1] + '+00:00'
+                        if date_value.endswith("Z"):
+                            date_value = date_value[:-1] + "+00:00"
                         parsed_date = datetime.fromisoformat(date_value)
                         # Normalize to timezone-naive for consistent comparison
                         return 0, parsed_date.replace(tzinfo=None)
                     except (ValueError, AttributeError):
                         # If parsing fails, treat as None
-                        return (1, 0) if self.sort_direction == "desc" else (1, float('inf'))
+                        return (
+                            (1, 0)
+                            if self.sort_direction == "desc"
+                            else (1, float("inf"))
+                        )
                 # Handle datetime objects directly (normalize timezone)
                 if isinstance(value, datetime):
                     return 0, value.replace(tzinfo=None)
@@ -1051,7 +1154,7 @@ class RealtorScraper(Scraper):
             return 0, value
 
         # Sort the homes
-        reverse = (self.sort_direction == "desc")
+        reverse = self.sort_direction == "desc"
         sorted_homes = sorted(homes, key=get_sort_key, reverse=reverse)
 
         return sorted_homes
@@ -1081,58 +1184,65 @@ class RealtorScraper(Scraper):
         for home in homes:
             # Apply exclude_pending filter
             if self.exclude_pending and self.listing_type != ListingType.PENDING:
-                flags = home.get('flags', {})
-                is_pending = flags.get('is_pending', False)
-                is_contingent = flags.get('is_contingent', False)
+                flags = home.get("flags", {})
+                is_pending = flags.get("is_pending", False)
+                is_contingent = flags.get("is_contingent", False)
 
                 if is_pending or is_contingent:
                     continue  # Skip this property
 
             # Apply mls_only filter
             if self.mls_only:
-                source = home.get('source', {})
-                if not source or not source.get('id'):
+                source = home.get("source", {})
+                if not source or not source.get("id"):
                     continue  # Skip this property
 
             filtered_homes.append(home)
 
         return filtered_homes
 
-
     @retry(
-        retry=retry_if_exception_type((JSONDecodeError, Exception)) & retry_if_not_exception_type(AuthenticationError),
+        retry=retry_if_exception_type((JSONDecodeError, Exception))
+        & retry_if_not_exception_type(AuthenticationError),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         stop=stop_after_attempt(3),
     )
     def get_bulk_prop_details(self, property_ids: list[str]) -> dict:
         """
-        Fetch extra property details for multiple properties in a single GraphQL query.
+        Fetch extra property details for multiple properties using parameterized GraphQL queries.
         Returns a map of property_id to its details.
         """
         if not self.extra_property_data or not property_ids:
             return {}
 
         property_ids = list(set(property_ids))
+        results = {}
 
-        fragments = "\n".join(
-            f'home_{property_id}: home(property_id: {property_id}) {HOMES_DATA}'
-            for property_id in property_ids
+        # Use parameterized query for single property
+        query = (
+            """query GetHome($property_id: ID!) {
+            home(property_id: $property_id) %s
+        }"""
+            % HOMES_DATA
         )
-        query = f"""query GetHome {{
-    {fragments}
-}}"""
 
-        data = self._graphql_post(query, {}, "GetHome")
+        def fetch_one(pid):
+            try:
+                variables = {"property_id": pid}
+                data = self._graphql_post(query, variables, "GetHome")
+                if data.get("data") and data["data"].get("home"):
+                    return pid, data["data"]["home"]
+            except Exception:
+                pass
+            return pid, None
 
-        if "data" not in data or data["data"] is None:
-            # If we got a 400 error with "Required parameter is missing", raise to trigger retry
-            if data and "errors" in data:
-                error_msgs = [e.get("message", "") for e in data.get("errors", [])]
-                if any("Required parameter is missing" in msg for msg in error_msgs):
-                    raise Exception(f"Transient API error: {error_msgs}")
-            return {}
+        with ThreadPoolExecutor(max_workers=self.NUM_PROPERTY_WORKERS) as executor:
+            future_to_pid = {
+                executor.submit(fetch_one, pid): pid for pid in property_ids
+            }
+            for future in as_completed(future_to_pid):
+                pid, result = future.result()
+                if result:
+                    results[pid] = result
 
-        properties = data["data"]
-        return {key.replace('home_', ''): properties[key] for key in properties if properties[key]}
-
-
+        return results
